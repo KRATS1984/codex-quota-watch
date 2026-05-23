@@ -1,0 +1,43 @@
+{
+  "codexPath": "codex",
+  "timeoutMs": 20000,
+  "timeZone": "Asia/Shanghai",
+  "limitIds": ["codex"],
+  "thresholdsRemaining": [20, 10],
+  "refreshDropFromUsedPercent": 50,
+  "refreshDropToUsedPercent": 15,
+  "alertOnFirstRunBelowThreshold": true,
+  "notifyOnErrorAfterFailures": 6,
+  "localNotifications": true,
+  "localNotificationSound": "Glass",
+  "statePath": "~/.codex-quota-watch/state.json",
+  "mobile": {
+    "bark": {
+      "enabled": false,
+      "url": "https://api.day.app/REPLACE_WITH_YOUR_KEY",
+      "sound": "bell",
+      "group": "Codex"
+    },
+    "ntfy": {
+      "enabled": false,
+      "url": "https://ntfy.sh/REPLACE_WITH_A_PRIVATE_TOPIC",
+      "token": "",
+      "priority": "high"
+    },
+    "pushover": {
+      "enabled": false,
+      "appToken": "",
+      "userKey": ""
+    },
+    "telegram": {
+      "enabled": false,
+      "botToken": "",
+      "chatId": ""
+    },
+    "wecomBot": {
+      "enabled": false,
+      "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=REPLACE_WITH_KEY"
+    },
+    "webhooks": []
+  }
+}

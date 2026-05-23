@@ -1,0 +1,15 @@
+.DS_Store
+node_modules/
+
+# Real local config may contain phone notification tokens/webhook URLs.
+config.json
+.env
+.env.*
+
+# Runtime state and logs.
+state.json
+*.log
+*.err.log
+
+# Local install target if copied into the repo during testing.
+.codex-quota-watch/
