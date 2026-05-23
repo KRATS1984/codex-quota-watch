@@ -1,56 +1,75 @@
-# Codex 额度刷新提醒
+# Codex Quota Watch
 
-这个目录里是一套本地 Codex 额度监控脚本。它不爬网页，而是调用 Codex 本地 app-server 的 `account/rateLimits/read` 内部接口读取额度窗口。
+Unofficial macOS quota refresh notifier for Codex.
 
-当前监控逻辑：
+This tool reads Codex quota windows from the local Codex app-server method `account/rateLimits/read`, then sends a macOS notification when usage is low or when a quota refresh is detected. Optional mobile notifications can be enabled through webhook-based services such as Bark, ntfy, Pushover, Telegram, or WeCom bot.
 
-- 每 5 分钟读取一次 Codex 额度。
-- 剩余额度低于 20% 或 10% 时提醒。
-- `usedPercent` 从高值降到低值，或重置时间变化且已用比例下降时，提醒“额度已刷新”。
-- 默认发 macOS 本机通知。
-- 手机提醒通过配置 webhook 开启，支持 Bark、ntfy、Pushover、Telegram、企业微信群机器人和通用 webhook。
+Tested with Codex CLI `0.133.0` on macOS.
 
-## 安装
+## Status
+
+This is an unofficial, best-effort utility. It uses Codex local app-server internal protocol, not a public stable API. Future Codex updates may change or remove the method this tool depends on.
+
+## Features
+
+- Checks Codex quota every 5 minutes through `launchd`.
+- Alerts when remaining quota is below 20% or 10%.
+- Detects refreshes when `usedPercent` drops from a high value to a low value, or when the reset timestamp changes and usage decreases.
+- Sends macOS notifications by default.
+- Supports optional phone notifications through Bark, ntfy, Pushover, Telegram, WeCom bot, and generic webhooks.
+- Stores runtime state locally so alerts are not repeated on every check.
+
+## Requirements
+
+- macOS.
+- Codex CLI installed and logged in.
+- Node.js available in `PATH`, or the bundled Codex Node runtime at `/Applications/Codex.app/Contents/Resources/node`.
+
+## Install
 
 ```bash
 ./install_launch_agent.sh
 ```
 
-安装后文件位置：
+Installed files:
 
-- 运行脚本：`~/.codex-quota-watch/codex-quota-watch.mjs`
-- 配置文件：`~/.codex-quota-watch/config.json`
-- 日志：`~/.codex-quota-watch/watch.log`
-- 错误日志：`~/.codex-quota-watch/watch.err.log`
+- Runtime script: `~/.codex-quota-watch/codex-quota-watch.mjs`
+- Local config: `~/.codex-quota-watch/config.json`
+- State file: `~/.codex-quota-watch/state.json`
+- Logs: `~/.codex-quota-watch/watch.log`
+- Error logs: `~/.codex-quota-watch/watch.err.log`
+- LaunchAgent: `~/Library/LaunchAgents/com.lumike.codex-quota-watch.plist`
 
-## 手动检查
+The LaunchAgent runs once every 300 seconds. It is normal for `launchctl print` to show `state = not running` between checks.
+
+## Manual Check
 
 ```bash
 node ~/.codex-quota-watch/codex-quota-watch.mjs --print --no-notify
 ```
 
-## 测试通知
+## Test Notifications
 
 ```bash
 node ~/.codex-quota-watch/codex-quota-watch.mjs --test-notify
 ```
 
-如果 macOS 弹不出通知，到系统设置里给 Terminal、iTerm 或 Script Editor 打开通知权限。
+If macOS notifications do not appear, enable notification permission for Terminal, iTerm, or the app that runs the command.
 
-## 手机提醒
+## Mobile Notifications
 
-最省事的 iPhone 方案是 Bark：
+Mobile notification credentials belong in `~/.codex-quota-watch/config.json`, not in this repository.
 
-1. 在 iPhone 安装 Bark。
-2. 打开 Bark，复制 `https://api.day.app/...` 形式的地址。
-3. 编辑 `~/.codex-quota-watch/config.json`：
+### Bark
+
+Bark is the simplest iPhone option.
 
 ```json
 {
   "mobile": {
     "bark": {
       "enabled": true,
-      "url": "https://api.day.app/你的BarkKey",
+      "url": "https://api.day.app/REPLACE_WITH_YOUR_KEY",
       "sound": "bell",
       "group": "Codex"
     }
@@ -58,14 +77,16 @@ node ~/.codex-quota-watch/codex-quota-watch.mjs --test-notify
 }
 ```
 
-Android 或跨平台可以用 ntfy：
+### ntfy
+
+ntfy works across platforms. Use a private, hard-to-guess topic.
 
 ```json
 {
   "mobile": {
     "ntfy": {
       "enabled": true,
-      "url": "https://ntfy.sh/一个足够随机的私有topic",
+      "url": "https://ntfy.sh/REPLACE_WITH_A_PRIVATE_TOPIC",
       "token": "",
       "priority": "high"
     }
@@ -73,22 +94,29 @@ Android 或跨平台可以用 ntfy：
 }
 ```
 
-如果你更习惯企业微信，可以建一个群机器人，然后配置：
+### WeCom Bot
 
 ```json
 {
   "mobile": {
     "wecomBot": {
       "enabled": true,
-      "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的key"
+      "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=REPLACE_WITH_KEY"
     }
   }
 }
 ```
 
-配置文件里可能放 token，权限默认是 `600`，不要提交到 Git。
+Pushover, Telegram, and generic webhook examples are included in `config.example.json`.
 
-## 查看服务状态
+## Security
+
+- Do not commit `~/.codex-quota-watch/config.json`; it may contain webhook URLs, bot tokens, or push service credentials.
+- `config.example.json` contains placeholders only.
+- `.gitignore` excludes local config, state, logs, `.env` files, and the local install directory.
+- This tool starts a local Codex app-server process and reads account rate limit metadata from your existing Codex login. It does not need your GitHub token or OpenAI API key.
+
+## Service Status
 
 ```bash
 launchctl print gui/$UID/com.lumike.codex-quota-watch
@@ -96,18 +124,18 @@ tail -f ~/.codex-quota-watch/watch.log
 tail -f ~/.codex-quota-watch/watch.err.log
 ```
 
-## 卸载
+## Uninstall
 
 ```bash
 ./uninstall_launch_agent.sh
 ```
 
-彻底删除配置和日志：
+Remove config and logs as well:
 
 ```bash
 ./uninstall_launch_agent.sh --purge
 ```
 
-## 注意
+## Notes
 
-`account/rateLimits/read` 是 Codex app-server 的内部协议，不是公开稳定 API。脚本已经把失败写进日志，并在连续失败 6 次后提醒；如果以后 Codex 升级改了协议，需要跟着更新脚本。
+The quota response currently includes fields such as `usedPercent`, `resetsAt`, `windowDurationMins`, `credits`, and `rateLimitsByLimitId`. These fields are internal to Codex app-server and may change without notice.
