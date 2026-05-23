@@ -11,6 +11,12 @@
   "localNotifications": true,
   "localNotificationSound": "Glass",
   "statePath": "~/.codex-quota-watch/state.json",
+  "widget": {
+    "pollIntervalSeconds": 300,
+    "showOnLaunch": true,
+    "alwaysOnTop": true,
+    "statePath": "~/.codex-quota-watch/widget-state.json"
+  },
   "mobile": {
     "bark": {
       "enabled": false,

@@ -28,7 +28,9 @@ if [[ -z "$CODEX_BIN" ]]; then
 fi
 
 mkdir -p "$APP_DIR" "$HOME/Library/LaunchAgents"
-install -m 755 "$SCRIPT_DIR/scripts/codex-quota-watch.mjs" "$APP_DIR/codex-quota-watch.mjs"
+rsync -a --delete "$SCRIPT_DIR/lib/" "$APP_DIR/lib/"
+mkdir -p "$APP_DIR/scripts"
+install -m 755 "$SCRIPT_DIR/scripts/codex-quota-watch.mjs" "$APP_DIR/scripts/codex-quota-watch.mjs"
 
 if [[ ! -f "$APP_DIR/config.json" ]]; then
   install -m 600 "$SCRIPT_DIR/config.example.json" "$APP_DIR/config.json"
@@ -45,7 +47,7 @@ cat > "$PLIST" <<PLIST
   <key>ProgramArguments</key>
   <array>
     <string>$NODE_BIN</string>
-    <string>$APP_DIR/codex-quota-watch.mjs</string>
+    <string>$APP_DIR/scripts/codex-quota-watch.mjs</string>
     <string>--once</string>
     <string>--config</string>
     <string>$APP_DIR/config.json</string>

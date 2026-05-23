@@ -8,8 +8,10 @@ config.json
 
 # Runtime state and logs.
 state.json
+widget-state.json
 *.log
 *.err.log
 
 # Local install target if copied into the repo during testing.
 .codex-quota-watch/
+widget/

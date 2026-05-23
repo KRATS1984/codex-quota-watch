@@ -2,7 +2,7 @@
 
 Unofficial macOS quota refresh notifier for Codex.
 
-This tool reads Codex quota windows from the local Codex app-server method `account/rateLimits/read`, then sends a macOS notification when usage is low or when a quota refresh is detected. Optional mobile notifications can be enabled through webhook-based services such as Bark, ntfy, Pushover, Telegram, or WeCom bot.
+This tool reads Codex quota windows from the local Codex app-server method `account/rateLimits/read`, then sends a macOS notification when usage is low or when a quota refresh is detected. It also includes an optional floating desktop widget that shows weekly remaining quota. Optional mobile notifications can be enabled through webhook-based services such as Bark, ntfy, Pushover, Telegram, or WeCom bot.
 
 Tested with Codex CLI `0.133.0` on macOS.
 
@@ -18,14 +18,16 @@ This is an unofficial, best-effort utility. It uses Codex local app-server inter
 - Sends macOS notifications by default.
 - Supports optional phone notifications through Bark, ntfy, Pushover, Telegram, WeCom bot, and generic webhooks.
 - Stores runtime state locally so alerts are not repeated on every check.
+- Adds an optional Electron floating widget for the weekly remaining percentage.
 
 ## Requirements
 
 - macOS.
 - Codex CLI installed and logged in.
 - Node.js available in `PATH`, or the bundled Codex Node runtime at `/Applications/Codex.app/Contents/Resources/node`.
+- Node.js `22.12.0` or newer plus npm, only needed for installing the optional Electron widget.
 
-## Install
+## Background Notifier
 
 ```bash
 ./install_launch_agent.sh
@@ -33,7 +35,8 @@ This is an unofficial, best-effort utility. It uses Codex local app-server inter
 
 Installed files:
 
-- Runtime script: `~/.codex-quota-watch/codex-quota-watch.mjs`
+- Runtime script: `~/.codex-quota-watch/scripts/codex-quota-watch.mjs`
+- Shared library: `~/.codex-quota-watch/lib`
 - Local config: `~/.codex-quota-watch/config.json`
 - State file: `~/.codex-quota-watch/state.json`
 - Logs: `~/.codex-quota-watch/watch.log`
@@ -42,16 +45,53 @@ Installed files:
 
 The LaunchAgent runs once every 300 seconds. It is normal for `launchctl print` to show `state = not running` between checks.
 
+## Floating Widget
+
+Install the optional Electron widget:
+
+```bash
+./install_widget_launch_agent.sh
+```
+
+The first widget install downloads the Electron runtime. If GitHub release downloads are slow or blocked in your network, set an Electron mirror before installing:
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ./install_widget_launch_agent.sh
+```
+
+The widget:
+
+- Shows weekly remaining quota as `100 - secondary.usedPercent`.
+- Floats above other windows in a transparent frameless window.
+- Refreshes every 5 minutes.
+- Can be hidden from the in-widget control or tray menu.
+- Does not disable the background notifier when hidden.
+
+Widget files:
+
+- Runtime app: `~/.codex-quota-watch/widget`
+- Widget state: `~/.codex-quota-watch/widget-state.json`
+- Logs: `~/.codex-quota-watch/widget.log`
+- Error logs: `~/.codex-quota-watch/widget.err.log`
+- LaunchAgent: `~/Library/LaunchAgents/com.lumike.codex-quota-watch-widget.plist`
+
+Run the widget manually from a checkout:
+
+```bash
+npm install
+npm run widget
+```
+
 ## Manual Check
 
 ```bash
-node ~/.codex-quota-watch/codex-quota-watch.mjs --print --no-notify
+node ~/.codex-quota-watch/scripts/codex-quota-watch.mjs --print --no-notify
 ```
 
 ## Test Notifications
 
 ```bash
-node ~/.codex-quota-watch/codex-quota-watch.mjs --test-notify
+node ~/.codex-quota-watch/scripts/codex-quota-watch.mjs --test-notify
 ```
 
 If macOS notifications do not appear, enable notification permission for Terminal, iTerm, or the app that runs the command.
@@ -120,8 +160,11 @@ Pushover, Telegram, and generic webhook examples are included in `config.example
 
 ```bash
 launchctl print gui/$UID/com.lumike.codex-quota-watch
+launchctl print gui/$UID/com.lumike.codex-quota-watch-widget
 tail -f ~/.codex-quota-watch/watch.log
 tail -f ~/.codex-quota-watch/watch.err.log
+tail -f ~/.codex-quota-watch/widget.log
+tail -f ~/.codex-quota-watch/widget.err.log
 ```
 
 ## Uninstall
@@ -134,6 +177,18 @@ Remove config and logs as well:
 
 ```bash
 ./uninstall_launch_agent.sh --purge
+```
+
+Uninstall only the widget:
+
+```bash
+./uninstall_widget_launch_agent.sh
+```
+
+Remove widget files and widget state:
+
+```bash
+./uninstall_widget_launch_agent.sh --purge
 ```
 
 ## Notes

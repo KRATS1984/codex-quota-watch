@@ -1,39 +1,12 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import os from "node:os";
 import http from "node:http";
 import https from "node:https";
-
-const VERSION = "0.1.0";
-const DEFAULT_CONFIG_PATH = "~/.codex-quota-watch/config.json";
-const DEFAULT_STATE_PATH = "~/.codex-quota-watch/state.json";
-
-const DEFAULT_CONFIG = {
-  codexPath: process.env.CODEX_CLI || "codex",
-  timeoutMs: 20000,
-  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai",
-  limitIds: ["codex"],
-  thresholdsRemaining: [20, 10],
-  refreshDropFromUsedPercent: 50,
-  refreshDropToUsedPercent: 15,
-  alertOnFirstRunBelowThreshold: true,
-  notifyOnErrorAfterFailures: 6,
-  localNotifications: true,
-  localNotificationSound: "Glass",
-  statePath: DEFAULT_STATE_PATH,
-  mobile: {
-    bark: { enabled: false, url: "", sound: "bell", group: "Codex" },
-    ntfy: { enabled: false, url: "", token: "", priority: "high" },
-    pushover: { enabled: false, appToken: "", userKey: "" },
-    telegram: { enabled: false, botToken: "", chatId: "" },
-    wecomBot: { enabled: false, url: "" },
-    webhooks: [],
-  },
-};
+import { dirname } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { DEFAULT_CONFIG_PATH, VERSION, loadConfig, readJson, writeJson } from "../lib/config.mjs";
+import { formatTime, queryRateLimits, selectSnapshots, summarizeSnapshots } from "../lib/quota-client.mjs";
 
 function usage() {
   console.log(`codex-quota-watch ${VERSION}
@@ -79,171 +52,6 @@ function parseArgs(argv) {
   }
 
   return args;
-}
-
-function expandHome(value) {
-  if (!value) return value;
-  if (value === "~") return os.homedir();
-  if (value.startsWith("~/")) return join(os.homedir(), value.slice(2));
-  return value;
-}
-
-function deepMerge(base, override) {
-  if (!override || typeof override !== "object" || Array.isArray(override)) {
-    return override === undefined ? base : override;
-  }
-
-  const out = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    if (
-      value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      base &&
-      typeof base[key] === "object" &&
-      !Array.isArray(base[key])
-    ) {
-      out[key] = deepMerge(base[key], value);
-    } else {
-      out[key] = value;
-    }
-  }
-  return out;
-}
-
-async function readJson(path, fallback) {
-  try {
-    return JSON.parse(await readFile(path, "utf8"));
-  } catch (error) {
-    if (error.code === "ENOENT") return fallback;
-    throw error;
-  }
-}
-
-async function writeJson(path, value) {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-}
-
-async function loadConfig(configPath) {
-  const expanded = expandHome(configPath);
-  const fileConfig = existsSync(expanded) ? await readJson(expanded, {}) : {};
-  const config = deepMerge(DEFAULT_CONFIG, fileConfig);
-  config.configPath = expanded;
-  config.statePath = expandHome(config.statePath || DEFAULT_STATE_PATH);
-  config.limitIds = Array.isArray(config.limitIds) ? config.limitIds : ["codex"];
-  config.thresholdsRemaining = Array.isArray(config.thresholdsRemaining)
-    ? config.thresholdsRemaining
-    : [20, 10];
-  return config;
-}
-
-function sendJson(child, value) {
-  child.stdin.write(`${JSON.stringify(value)}\n`);
-}
-
-function queryRateLimits(config) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(config.codexPath || "codex", ["app-server", "--listen", "stdio://"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        TERM: process.env.TERM && process.env.TERM !== "dumb" ? process.env.TERM : "xterm-256color",
-      },
-    });
-
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-
-    const finish = (error, result) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (!child.killed) child.kill("SIGTERM");
-      if (error) reject(error);
-      else resolve(result);
-    };
-
-    const timer = setTimeout(() => {
-      finish(new Error(`Timed out reading Codex rate limits after ${config.timeoutMs} ms`));
-    }, config.timeoutMs);
-
-    child.on("error", (error) => finish(error));
-    child.on("close", (code) => {
-      if (!settled) {
-        const detail = stderr.trim() || stdout.trim() || `exit code ${code}`;
-        finish(new Error(`Codex app-server exited before returning rate limits: ${detail}`));
-      }
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString("utf8");
-    });
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString("utf8");
-      while (stdout.includes("\n")) {
-        const idx = stdout.indexOf("\n");
-        const line = stdout.slice(0, idx).trim();
-        stdout = stdout.slice(idx + 1);
-        if (!line) continue;
-
-        let message;
-        try {
-          message = JSON.parse(line);
-        } catch {
-          continue;
-        }
-
-        if (message.id === 1 && message.result) {
-          sendJson(child, { method: "initialized" });
-          sendJson(child, { id: 2, method: "account/rateLimits/read", params: null });
-        } else if (message.id === 1 && message.error) {
-          finish(new Error(`Codex initialize failed: ${message.error.message || JSON.stringify(message.error)}`));
-        } else if (message.id === 2 && message.result) {
-          finish(null, message.result);
-        } else if (message.id === 2 && message.error) {
-          finish(new Error(`Codex rate limit read failed: ${message.error.message || JSON.stringify(message.error)}`));
-        }
-      }
-    });
-
-    sendJson(child, {
-      id: 1,
-      method: "initialize",
-      params: {
-        clientInfo: { name: "codex-quota-watch", version: VERSION },
-        capabilities: {
-          experimentalApi: true,
-          optOutNotificationMethods: [],
-        },
-      },
-    });
-  });
-}
-
-function selectSnapshots(result, config) {
-  const byId = result.rateLimitsByLimitId || {};
-  const snapshots = [];
-  for (const limitId of config.limitIds) {
-    const snapshot = byId[limitId] || (result.rateLimits?.limitId === limitId ? result.rateLimits : null);
-    if (snapshot) snapshots.push(snapshot);
-  }
-  if (!snapshots.length && result.rateLimits) snapshots.push(result.rateLimits);
-  return snapshots;
-}
-
-function formatTime(epochSeconds, timeZone) {
-  if (!epochSeconds) return "unknown";
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone,
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(epochSeconds * 1000));
 }
 
 function labelForWindow(kind) {
@@ -531,32 +339,6 @@ async function notify(event, config) {
       }
     },
   );
-}
-
-function summarizeSnapshots(snapshots, config) {
-  return snapshots.map((snapshot) => ({
-    limitId: snapshot.limitId,
-    limitName: snapshot.limitName,
-    planType: snapshot.planType,
-    primary: snapshot.primary
-      ? {
-          usedPercent: snapshot.primary.usedPercent,
-          remainingPercent: 100 - snapshot.primary.usedPercent,
-          resetsAt: snapshot.primary.resetsAt,
-          resetsAtText: formatTime(snapshot.primary.resetsAt, config.timeZone),
-        }
-      : null,
-    secondary: snapshot.secondary
-      ? {
-          usedPercent: snapshot.secondary.usedPercent,
-          remainingPercent: 100 - snapshot.secondary.usedPercent,
-          resetsAt: snapshot.secondary.resetsAt,
-          resetsAtText: formatTime(snapshot.secondary.resetsAt, config.timeZone),
-        }
-      : null,
-    credits: snapshot.credits || null,
-    rateLimitReachedType: snapshot.rateLimitReachedType || null,
-  }));
 }
 
 async function handleFailure(error, state, config, noNotify) {

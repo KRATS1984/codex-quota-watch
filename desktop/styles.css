@@ -1,0 +1,207 @@
+:root {
+  color-scheme: dark;
+  --progress: 0%;
+  --glow: #63f5ff;
+  --ink: rgba(247, 252, 255, 0.96);
+  --muted: rgba(214, 229, 232, 0.68);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 226px;
+  height: 226px;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family:
+    ui-rounded,
+    "SF Pro Rounded",
+    "Avenir Next",
+    system-ui,
+    sans-serif;
+  user-select: none;
+}
+
+.widget {
+  position: relative;
+  width: 226px;
+  height: 226px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 32% 24%, rgba(99, 245, 255, 0.3), transparent 28%),
+    radial-gradient(circle at 70% 74%, rgba(156, 255, 111, 0.22), transparent 32%),
+    rgba(8, 14, 20, 0.72);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.14) inset,
+    0 22px 56px rgba(0, 0, 0, 0.46),
+    0 0 34px color-mix(in srgb, var(--glow) 58%, transparent);
+  -webkit-app-region: drag;
+}
+
+.widget::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.1), transparent 42%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 18px);
+  mask-image: radial-gradient(circle, transparent 0 60%, black 61%);
+  opacity: 0.5;
+  animation: scan 8s linear infinite;
+}
+
+.hide-button {
+  position: absolute;
+  z-index: 5;
+  top: 23px;
+  right: 24px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 9px, rgba(255, 255, 255, 0.78) 9px 13px, transparent 13px),
+    rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16) inset;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.hide-button:hover {
+  background:
+    linear-gradient(90deg, transparent 9px, rgba(255, 255, 255, 0.94) 9px 13px, transparent 13px),
+    rgba(255, 255, 255, 0.2);
+}
+
+.gauge {
+  position: relative;
+  width: 184px;
+  height: 184px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    conic-gradient(var(--glow) var(--progress), rgba(255, 255, 255, 0.1) 0),
+    radial-gradient(circle, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.02));
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--glow) 70%, transparent));
+  animation: pulse 3.8s ease-in-out infinite;
+}
+
+.ring::after {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.18), transparent 25%),
+    rgba(10, 16, 24, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+
+.core {
+  position: relative;
+  z-index: 2;
+  width: 130px;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.status {
+  min-width: 52px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(99, 245, 255, 0.14);
+  color: var(--glow);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.percent {
+  height: 64px;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  color: var(--ink);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--glow) 62%, transparent);
+}
+
+#percentValue {
+  font-size: 60px;
+  line-height: 1;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.unit {
+  margin-left: 2px;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.label,
+.reset {
+  width: 132px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  letter-spacing: 0;
+}
+
+.label {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.reset {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.offline {
+  --glow: #ff6b8b;
+}
+
+.offline .status {
+  background: rgba(255, 107, 139, 0.16);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.92;
+  }
+  50% {
+    transform: scale(1.025);
+    opacity: 1;
+  }
+}
+
+@keyframes scan {
+  to {
+    transform: rotate(360deg);
+  }
+}

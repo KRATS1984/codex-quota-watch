@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codex Quota Watch</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="widget" id="widget">
+      <button class="hide-button" id="hideButton" aria-label="Hide widget" title="Hide widget"></button>
+      <section class="gauge" id="gauge" aria-live="polite">
+        <div class="ring"></div>
+        <div class="core">
+          <div class="status" id="status">syncing</div>
+          <div class="percent"><span id="percentValue">--</span><span class="unit">%</span></div>
+          <div class="label">weekly remaining</div>
+          <div class="reset" id="resetTime">reset unknown</div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./renderer.mjs"></script>
+  </body>
+</html>
