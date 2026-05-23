@@ -18,14 +18,14 @@ This is an unofficial, best-effort utility. It uses Codex local app-server inter
 - Sends macOS notifications by default.
 - Supports optional phone notifications through Bark, ntfy, Pushover, Telegram, WeCom bot, and generic webhooks.
 - Stores runtime state locally so alerts are not repeated on every check.
-- Adds an optional Electron floating widget for the weekly remaining percentage.
+- Adds an optional native macOS floating orb for the weekly remaining percentage.
 
 ## Requirements
 
 - macOS.
 - Codex CLI installed and logged in.
 - Node.js available in `PATH`, or the bundled Codex Node runtime at `/Applications/Codex.app/Contents/Resources/node`.
-- Node.js `22.12.0` or newer plus npm, only needed for installing the optional Electron widget.
+- Xcode Command Line Tools, only needed when building the optional native widget from source.
 
 ## Background Notifier
 
@@ -47,39 +47,33 @@ The LaunchAgent runs once every 300 seconds. It is normal for `launchctl print` 
 
 ## Floating Widget
 
-Install the optional Electron widget:
+Install the optional native macOS widget:
 
 ```bash
 ./install_widget_launch_agent.sh
 ```
 
-The first widget install downloads the Electron runtime. If GitHub release downloads are slow or blocked in your network, set an Electron mirror before installing:
-
-```bash
-ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ./install_widget_launch_agent.sh
-```
-
 The widget:
 
 - Shows weekly remaining quota as `100 - secondary.usedPercent`.
-- Floats above other windows in a transparent frameless window.
+- Floats above other windows as a 96px translucent Apple-style orb.
+- Fades when idle and snaps to the nearest screen edge after dragging.
 - Refreshes every 5 minutes.
-- Can be hidden from the in-widget control or tray menu.
+- Can be hidden, shown, refreshed, or quit from the menu bar.
 - Does not disable the background notifier when hidden.
 
 Widget files:
 
-- Runtime app: `~/.codex-quota-watch/widget`
+- Runtime app: `~/.codex-quota-watch/widget/CodexQuotaWatch.app`
 - Widget state: `~/.codex-quota-watch/widget-state.json`
 - Logs: `~/.codex-quota-watch/widget.log`
 - Error logs: `~/.codex-quota-watch/widget.err.log`
 - LaunchAgent: `~/Library/LaunchAgents/com.lumike.codex-quota-watch-widget.plist`
 
-Run the widget manually from a checkout:
+Build the widget app manually from a checkout:
 
 ```bash
-npm install
-npm run widget
+./scripts/build_widget_app.sh
 ```
 
 ## Manual Check

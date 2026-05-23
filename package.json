@@ -1,19 +1,16 @@
 {
   "name": "codex-quota-watch",
-  "version": "0.2.0",
-  "description": "Unofficial macOS quota refresh notifier and floating widget for Codex.",
+  "version": "0.3.0",
+  "description": "Unofficial macOS quota refresh notifier and native floating widget for Codex.",
   "license": "MIT",
   "type": "module",
   "private": false,
-  "main": "desktop/main.mjs",
+  "main": "scripts/codex-quota-watch.mjs",
   "engines": {
     "node": ">=22.12.0"
   },
   "scripts": {
-    "check": "node --check lib/config.mjs && node --check lib/quota-client.mjs && node --check scripts/codex-quota-watch.mjs && node --check desktop/main.mjs && node --check desktop/preload.mjs && node --check desktop/renderer.mjs",
-    "widget": "electron desktop/main.mjs"
-  },
-  "devDependencies": {
-    "electron": "42.2.0"
+    "check": "node --check lib/config.mjs && node --check lib/quota-client.mjs && node --check scripts/codex-quota-watch.mjs",
+    "build:widget": "./scripts/build_widget_app.sh"
   }
 }
