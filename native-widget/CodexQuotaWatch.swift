@@ -3,6 +3,7 @@ import Cocoa
 let appVersion = "0.3.0"
 let defaultConfigPath = "~/.codex-quota-watch/config.json"
 let defaultWidgetStatePath = "~/.codex-quota-watch/widget-state.json"
+let orbWindowPadding: CGFloat = 8
 
 struct WidgetConfig {
     var pollIntervalSeconds: TimeInterval = 300
@@ -10,8 +11,8 @@ struct WidgetConfig {
     var alwaysOnTop = true
     var statePath = expandHome(defaultWidgetStatePath)
     var size: CGFloat = 96
-    var idleOpacity: CGFloat = 0.55
-    var activeOpacity: CGFloat = 0.94
+    var idleOpacity: CGFloat = 0.48
+    var activeOpacity: CGFloat = 0.9
     var edgeSnap = true
     var snapMargin: CGFloat = 12
 }
@@ -396,12 +397,12 @@ final class RingView: NSView {
         )
         let center = NSPoint(x: rect.midX, y: rect.midY)
         let radius = diameter / 2
-        let lineWidth: CGFloat = 3.5
+        let lineWidth: CGFloat = 2.5
 
         let track = NSBezierPath()
         track.lineWidth = lineWidth
         track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-        NSColor.separatorColor.withAlphaComponent(0.22).setStroke()
+        NSColor.separatorColor.withAlphaComponent(0.12).setStroke()
         track.stroke()
 
         let ring = NSBezierPath()
@@ -414,9 +415,68 @@ final class RingView: NSView {
             endAngle: 90 - 360 * progress,
             clockwise: true
         )
-        let color = offline ? NSColor.systemOrange : NSColor.controlAccentColor
-        color.withAlphaComponent(0.9).setStroke()
+        let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? NSColor.controlAccentColor
+        let softAccent = accent.blended(withFraction: 0.34, of: NSColor.secondaryLabelColor) ?? accent
+        let color = offline ? NSColor.systemOrange.withAlphaComponent(0.58) : softAccent.withAlphaComponent(0.66)
+        color.setStroke()
         ring.stroke()
+    }
+}
+
+final class DetailBubbleView: NSView {
+    private let materialView = NSVisualEffectView()
+    private let label = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    override var isFlipped: Bool { true }
+
+    private func setup() {
+        wantsLayer = true
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.12).cgColor
+        layer?.shadowOpacity = 1
+        layer?.shadowRadius = 10
+        layer?.shadowOffset = NSSize(width: 0, height: -2)
+
+        materialView.material = .popover
+        materialView.blendingMode = .behindWindow
+        materialView.state = .active
+        materialView.wantsLayer = true
+        materialView.layer?.cornerCurve = .continuous
+        materialView.layer?.cornerRadius = 15
+        materialView.layer?.masksToBounds = true
+        materialView.layer?.borderWidth = 0.8
+        materialView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.16).cgColor
+        materialView.autoresizingMask = [.width, .height]
+        addSubview(materialView)
+
+        label.alignment = .center
+        label.textColor = .secondaryLabelColor
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.backgroundColor = .clear
+        label.isBezeled = false
+        label.isEditable = false
+        label.isSelectable = false
+        addSubview(label)
+    }
+
+    override func layout() {
+        super.layout()
+        materialView.frame = bounds
+        label.frame = NSRect(x: 12, y: 6, width: bounds.width - 24, height: 20)
+    }
+
+    func render(text: String) {
+        label.stringValue = text
     }
 }
 
@@ -450,13 +510,19 @@ final class OrbView: NSView {
     private func setup() {
         wantsLayer = true
         layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.14).cgColor
+        layer?.shadowOpacity = 1
+        layer?.shadowRadius = 12
+        layer?.shadowOffset = NSSize(width: 0, height: -3)
 
-        materialView.material = .hudWindow
+        materialView.material = .popover
         materialView.blendingMode = .behindWindow
         materialView.state = .active
         materialView.wantsLayer = true
         materialView.layer?.cornerCurve = .continuous
         materialView.layer?.masksToBounds = true
+        materialView.layer?.borderWidth = 0.8
+        materialView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.16).cgColor
         materialView.autoresizingMask = [.width, .height]
         addSubview(materialView)
 
@@ -466,7 +532,7 @@ final class OrbView: NSView {
 
         percentLabel.alignment = .center
         percentLabel.textColor = .labelColor
-        percentLabel.font = .systemFont(ofSize: 27, weight: .semibold)
+        percentLabel.font = .systemFont(ofSize: 25, weight: .medium)
         percentLabel.backgroundColor = .clear
         percentLabel.isBezeled = false
         percentLabel.isEditable = false
@@ -474,19 +540,21 @@ final class OrbView: NSView {
         addSubview(percentLabel)
 
         statusDot.wantsLayer = true
-        statusDot.layer?.backgroundColor = NSColor.systemOrange.cgColor
-        statusDot.layer?.cornerRadius = 3.5
+        statusDot.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.72).cgColor
+        statusDot.layer?.cornerRadius = 3
         statusDot.isHidden = true
         addSubview(statusDot)
     }
 
     override func layout() {
         super.layout()
-        materialView.frame = bounds
+        let visualFrame = bounds.insetBy(dx: orbWindowPadding, dy: orbWindowPadding)
+        materialView.frame = visualFrame
         materialView.layer?.cornerRadius = min(bounds.width, bounds.height) / 2
-        ringView.frame = bounds
-        percentLabel.frame = NSRect(x: 0, y: bounds.midY - 16, width: bounds.width, height: 34)
-        statusDot.frame = NSRect(x: bounds.maxX - 24, y: 18, width: 7, height: 7)
+        materialView.layer?.cornerRadius = min(visualFrame.width, visualFrame.height) / 2
+        ringView.frame = visualFrame
+        percentLabel.frame = NSRect(x: visualFrame.minX, y: visualFrame.midY - 15, width: visualFrame.width, height: 32)
+        statusDot.frame = NSRect(x: visualFrame.maxX - 24, y: visualFrame.minY + 18, width: 6, height: 6)
     }
 
     override func updateTrackingAreas() {
@@ -496,7 +564,7 @@ final class OrbView: NSView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -505,7 +573,7 @@ final class OrbView: NSView {
     }
 
     func render(quota: WeeklyQuota, offline: Bool) {
-        percentLabel.stringValue = "\(quota.remainingPercent)%"
+        setPercentValue(quota.remainingPercent)
         ringView.progress = CGFloat(quota.remainingPercent) / 100
         ringView.offline = offline
         statusDot.isHidden = !offline
@@ -515,11 +583,47 @@ final class OrbView: NSView {
     }
 
     func renderOffline(message: String) {
-        percentLabel.stringValue = "--%"
+        setOfflinePercent()
         ringView.progress = 0
         ringView.offline = true
         statusDot.isHidden = false
         toolTip = "Offline: \(message)"
+    }
+
+    private func setPercentValue(_ value: Int) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let text = NSMutableAttributedString(
+            string: "\(value)",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 25, weight: .medium),
+                .foregroundColor: NSColor.labelColor.withAlphaComponent(0.86),
+                .paragraphStyle: paragraph,
+            ]
+        )
+        text.append(NSAttributedString(
+            string: "%",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 16, weight: .medium),
+                .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.78),
+                .baselineOffset: 2,
+                .paragraphStyle: paragraph,
+            ]
+        ))
+        percentLabel.attributedStringValue = text
+    }
+
+    private func setOfflinePercent() {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        percentLabel.attributedStringValue = NSAttributedString(
+            string: "--%",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 24, weight: .medium),
+                .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.78),
+                .paragraphStyle: paragraph,
+            ]
+        )
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -528,6 +632,10 @@ final class OrbView: NSView {
 
     override func mouseExited(with event: NSEvent) {
         onHoverChanged?(false)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        onHoverChanged?(true)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -552,6 +660,9 @@ final class OrbView: NSView {
         dragStartMouse = nil
         dragStartFrame = nil
         onDragChanged?(false)
+        if bounds.contains(convert(event.locationInWindow, from: nil)) {
+            onHoverChanged?(true)
+        }
         onDragEnded?()
     }
 
@@ -568,6 +679,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var client: CodexQuotaClient?
     private var panel: NSPanel?
     private var orbView: OrbView?
+    private var detailPanel: NSPanel?
+    private var detailView: DetailBubbleView?
     private var statusItem: NSStatusItem?
     private var refreshTimer: Timer?
     private var idleTimer: Timer?
@@ -608,7 +721,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func createPanel() {
-        let size = config.widget.size
+        let size = config.widget.size + orbWindowPadding * 2
         let frame = normalizedFrame(savedFrame: state.frame, size: size)
         let panel = NSPanel(
             contentRect: frame,
@@ -623,14 +736,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = false
+        panel.acceptsMouseMovedEvents = true
         panel.alphaValue = config.widget.idleOpacity
 
         let orb = OrbView(frame: NSRect(x: 0, y: 0, width: size, height: size))
         orb.onHoverChanged = { [weak self] hovering in
             self?.setActive(hovering)
+            if hovering {
+                self?.showDetailBubble()
+            } else {
+                self?.hideDetailBubble()
+            }
         }
         orb.onDragChanged = { [weak self] dragging in
             self?.setActive(dragging)
+            if dragging {
+                self?.hideDetailBubble()
+            }
         }
         orb.onDragEnded = { [weak self] in
             self?.snapPanelIfNeeded()
@@ -646,6 +768,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView = orb
         self.panel = panel
         self.orbView = orb
+    }
+
+    private func createDetailPanel() {
+        let frame = NSRect(x: 0, y: 0, width: 150, height: 32)
+        let panel = NSPanel(
+            contentRect: frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = config.widget.alwaysOnTop ? .floating : .normal
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.hidesOnDeactivate = false
+        panel.ignoresMouseEvents = true
+        panel.alphaValue = 0
+
+        let view = DetailBubbleView(frame: NSRect(x: 0, y: 0, width: frame.width, height: frame.height))
+        panel.contentView = view
+        detailPanel = panel
+        detailView = view
     }
 
     private func createStatusItem() {
@@ -730,6 +875,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     orbView?.renderOffline(message: error.localizedDescription)
                 }
             }
+            updateDetailBubbleText()
             updateStatusMenu()
         }
     }
@@ -750,13 +896,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.level = config.widget.alwaysOnTop ? .floating : .normal
         state.hidden = false
         persistState()
-        setActive(true)
-        scheduleIdleFade()
+        setActive(true, autoFade: true)
         updateStatusMenu()
     }
 
     private func hideOrb() {
         panel?.orderOut(nil)
+        hideDetailBubble()
         state.hidden = true
         persistState()
         updateStatusMenu()
@@ -767,15 +913,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    private func setActive(_ active: Bool) {
+    private func setActive(_ active: Bool, autoFade: Bool = false) {
         idleTimer?.invalidate()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.16
             panel?.animator().alphaValue = active ? config.widget.activeOpacity : config.widget.idleOpacity
         }
-        if active {
+        if active && autoFade {
             scheduleIdleFade()
         }
+    }
+
+    private func detailText() -> String {
+        if offline {
+            if let lastQuota {
+                return "Offline · Reset \(lastQuota.resetsAtText)"
+            }
+            return "Offline"
+        }
+        return lastQuota.map { "Reset \($0.resetsAtText)" } ?? "Syncing"
+    }
+
+    private func updateDetailBubbleText() {
+        detailView?.render(text: detailText())
+    }
+
+    private func showDetailBubble() {
+        guard panel?.isVisible == true else { return }
+        if detailPanel == nil {
+            createDetailPanel()
+        }
+        updateDetailBubbleText()
+        positionDetailBubble()
+        detailPanel?.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            detailPanel?.animator().alphaValue = 0.92
+        }
+    }
+
+    private func hideDetailBubble() {
+        guard let detailPanel, detailPanel.isVisible else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            detailPanel.animator().alphaValue = 0
+        } completionHandler: {
+            detailPanel.orderOut(nil)
+        }
+    }
+
+    private func positionDetailBubble() {
+        guard let panel, let detailPanel else { return }
+        let orbFrame = panel.frame
+        let bubbleFrame = detailPanel.frame
+        let screen = NSScreen.screens.first { $0.visibleFrame.intersects(orbFrame) } ?? NSScreen.main
+        guard let screenFrame = screen?.visibleFrame else { return }
+
+        let gap: CGFloat = 8
+        let showLeft = orbFrame.midX > screenFrame.midX
+        let x = showLeft ? orbFrame.minX - bubbleFrame.width - gap : orbFrame.maxX + gap
+        let y = clampDouble(
+            orbFrame.midY - bubbleFrame.height / 2,
+            min: screenFrame.minY + config.widget.snapMargin,
+            max: screenFrame.maxY - bubbleFrame.height - config.widget.snapMargin
+        )
+        let clampedX = clampDouble(
+            x,
+            min: screenFrame.minX + config.widget.snapMargin,
+            max: screenFrame.maxX - bubbleFrame.width - config.widget.snapMargin
+        )
+        detailPanel.setFrameOrigin(NSPoint(x: clampedX, y: y))
     }
 
     private func scheduleIdleFade() {

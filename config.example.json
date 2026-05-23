@@ -16,8 +16,8 @@
     "showOnLaunch": true,
     "alwaysOnTop": true,
     "size": 96,
-    "idleOpacity": 0.55,
-    "activeOpacity": 0.94,
+    "idleOpacity": 0.48,
+    "activeOpacity": 0.9,
     "edgeSnap": true,
     "snapMargin": 12,
     "statePath": "~/.codex-quota-watch/widget-state.json"
