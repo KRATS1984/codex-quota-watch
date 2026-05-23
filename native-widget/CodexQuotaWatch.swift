@@ -180,6 +180,16 @@ func logError(_ message: String) {
     }
 }
 
+func isDarkAppearance(_ appearance: NSAppearance?) -> Bool {
+    let resolved = (appearance ?? NSApp.effectiveAppearance).bestMatch(from: [
+        .aqua,
+        .darkAqua,
+        .vibrantLight,
+        .vibrantDark,
+    ])
+    return resolved == .darkAqua || resolved == .vibrantDark
+}
+
 final class CodexQuotaClient {
     private let config: AppConfig
 
@@ -387,6 +397,7 @@ final class RingView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        let dark = isDarkAppearance(effectiveAppearance)
         let inset: CGFloat = 7
         let diameter = min(bounds.width, bounds.height) - inset * 2
         let rect = NSRect(
@@ -402,7 +413,7 @@ final class RingView: NSView {
         let track = NSBezierPath()
         track.lineWidth = lineWidth
         track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-        NSColor.separatorColor.withAlphaComponent(0.12).setStroke()
+        NSColor.separatorColor.withAlphaComponent(dark ? 0.28 : 0.12).setStroke()
         track.stroke()
 
         let ring = NSBezierPath()
@@ -416,8 +427,10 @@ final class RingView: NSView {
             clockwise: true
         )
         let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? NSColor.controlAccentColor
-        let softAccent = accent.blended(withFraction: 0.34, of: NSColor.secondaryLabelColor) ?? accent
-        let color = offline ? NSColor.systemOrange.withAlphaComponent(0.58) : softAccent.withAlphaComponent(0.66)
+        let softAccent = accent.blended(withFraction: dark ? 0.18 : 0.34, of: NSColor.secondaryLabelColor) ?? accent
+        let color = offline
+            ? NSColor.systemOrange.withAlphaComponent(dark ? 0.82 : 0.58)
+            : softAccent.withAlphaComponent(dark ? 0.92 : 0.66)
         color.setStroke()
         ring.stroke()
     }
@@ -439,6 +452,11 @@ final class DetailBubbleView: NSView {
 
     override var isFlipped: Bool { true }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateResolvedColors()
+    }
+
     private func setup() {
         wantsLayer = true
         layer?.masksToBounds = false
@@ -455,18 +473,17 @@ final class DetailBubbleView: NSView {
         materialView.layer?.cornerRadius = 15
         materialView.layer?.masksToBounds = true
         materialView.layer?.borderWidth = 0.8
-        materialView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.16).cgColor
         materialView.autoresizingMask = [.width, .height]
         addSubview(materialView)
 
         label.alignment = .center
-        label.textColor = .secondaryLabelColor
         label.font = .systemFont(ofSize: 12, weight: .medium)
         label.backgroundColor = .clear
         label.isBezeled = false
         label.isEditable = false
         label.isSelectable = false
         addSubview(label)
+        updateResolvedColors()
     }
 
     override func layout() {
@@ -477,6 +494,18 @@ final class DetailBubbleView: NSView {
 
     func render(text: String) {
         label.stringValue = text
+    }
+
+    func refreshAppearance() {
+        updateResolvedColors()
+        needsDisplay = true
+    }
+
+    private func updateResolvedColors() {
+        let dark = isDarkAppearance(effectiveAppearance)
+        materialView.material = dark ? .hudWindow : .popover
+        materialView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(dark ? 0.28 : 0.16).cgColor
+        label.textColor = dark ? NSColor.labelColor.withAlphaComponent(0.88) : .secondaryLabelColor
     }
 }
 
@@ -494,6 +523,8 @@ final class OrbView: NSView {
     private var trackingAreaRef: NSTrackingArea?
     private var dragStartMouse: NSPoint?
     private var dragStartFrame: NSRect?
+    private var currentPercent: Int?
+    private var showingOfflinePlaceholder = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -506,6 +537,17 @@ final class OrbView: NSView {
     }
 
     override var isFlipped: Bool { true }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateResolvedColors()
+        ringView.needsDisplay = true
+        if let currentPercent {
+            setPercentValue(currentPercent)
+        } else if showingOfflinePlaceholder {
+            setOfflinePercent()
+        }
+    }
 
     private func setup() {
         wantsLayer = true
@@ -522,7 +564,6 @@ final class OrbView: NSView {
         materialView.layer?.cornerCurve = .continuous
         materialView.layer?.masksToBounds = true
         materialView.layer?.borderWidth = 0.8
-        materialView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.16).cgColor
         materialView.autoresizingMask = [.width, .height]
         addSubview(materialView)
 
@@ -531,7 +572,6 @@ final class OrbView: NSView {
         addSubview(ringView)
 
         percentLabel.alignment = .center
-        percentLabel.textColor = .labelColor
         percentLabel.font = .systemFont(ofSize: 25, weight: .medium)
         percentLabel.backgroundColor = .clear
         percentLabel.isBezeled = false
@@ -540,10 +580,10 @@ final class OrbView: NSView {
         addSubview(percentLabel)
 
         statusDot.wantsLayer = true
-        statusDot.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.72).cgColor
         statusDot.layer?.cornerRadius = 3
         statusDot.isHidden = true
         addSubview(statusDot)
+        updateResolvedColors()
     }
 
     override func layout() {
@@ -573,6 +613,8 @@ final class OrbView: NSView {
     }
 
     func render(quota: WeeklyQuota, offline: Bool) {
+        currentPercent = quota.remainingPercent
+        showingOfflinePlaceholder = false
         setPercentValue(quota.remainingPercent)
         ringView.progress = CGFloat(quota.remainingPercent) / 100
         ringView.offline = offline
@@ -583,6 +625,8 @@ final class OrbView: NSView {
     }
 
     func renderOffline(message: String) {
+        currentPercent = nil
+        showingOfflinePlaceholder = true
         setOfflinePercent()
         ringView.progress = 0
         ringView.offline = true
@@ -591,13 +635,14 @@ final class OrbView: NSView {
     }
 
     private func setPercentValue(_ value: Int) {
+        let dark = isDarkAppearance(effectiveAppearance)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         let text = NSMutableAttributedString(
             string: "\(value)",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 25, weight: .medium),
-                .foregroundColor: NSColor.labelColor.withAlphaComponent(0.86),
+                .foregroundColor: NSColor.labelColor.withAlphaComponent(dark ? 0.96 : 0.86),
                 .paragraphStyle: paragraph,
             ]
         )
@@ -605,7 +650,7 @@ final class OrbView: NSView {
             string: "%",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 16, weight: .medium),
-                .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.78),
+                .foregroundColor: (dark ? NSColor.labelColor : NSColor.secondaryLabelColor).withAlphaComponent(dark ? 0.82 : 0.78),
                 .baselineOffset: 2,
                 .paragraphStyle: paragraph,
             ]
@@ -614,16 +659,35 @@ final class OrbView: NSView {
     }
 
     private func setOfflinePercent() {
+        let dark = isDarkAppearance(effectiveAppearance)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         percentLabel.attributedStringValue = NSAttributedString(
             string: "--%",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 24, weight: .medium),
-                .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.78),
+                .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(dark ? 0.9 : 0.78),
                 .paragraphStyle: paragraph,
             ]
         )
+    }
+
+    private func updateResolvedColors() {
+        let dark = isDarkAppearance(effectiveAppearance)
+        materialView.material = dark ? .hudWindow : .popover
+        materialView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(dark ? 0.3 : 0.16).cgColor
+        statusDot.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(dark ? 0.86 : 0.72).cgColor
+    }
+
+    func refreshAppearance() {
+        updateResolvedColors()
+        ringView.needsDisplay = true
+        if let currentPercent {
+            setPercentValue(currentPercent)
+        } else if showingOfflinePlaceholder {
+            setOfflinePercent()
+        }
+        needsDisplay = true
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -694,6 +758,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state = loadState(path: config.widget.statePath)
         client = CodexQuotaClient(config: config)
 
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(systemAppearanceChanged),
+            name: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil
+        )
+
         createStatusItem()
         createPanel()
         updateStatusMenu()
@@ -737,7 +808,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = false
         panel.acceptsMouseMovedEvents = true
-        panel.alphaValue = config.widget.idleOpacity
+        panel.alphaValue = adjustedIdleOpacity()
 
         let orb = OrbView(frame: NSRect(x: 0, y: 0, width: size, height: size))
         orb.onHoverChanged = { [weak self] hovering in
@@ -791,6 +862,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView = view
         detailPanel = panel
         detailView = view
+    }
+
+    @objc private func systemAppearanceChanged() {
+        orbView?.refreshAppearance()
+        detailView?.refreshAppearance()
+        if panel?.isVisible == true {
+            panel?.alphaValue = adjustedIdleOpacity()
+        }
     }
 
     private func createStatusItem() {
@@ -917,11 +996,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         idleTimer?.invalidate()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.16
-            panel?.animator().alphaValue = active ? config.widget.activeOpacity : config.widget.idleOpacity
+            panel?.animator().alphaValue = active ? adjustedActiveOpacity() : adjustedIdleOpacity()
         }
         if active && autoFade {
             scheduleIdleFade()
         }
+    }
+
+    private func adjustedIdleOpacity() -> CGFloat {
+        let dark = isDarkAppearance(panel?.effectiveAppearance)
+        return dark ? max(config.widget.idleOpacity, 0.66) : config.widget.idleOpacity
+    }
+
+    private func adjustedActiveOpacity() -> CGFloat {
+        let dark = isDarkAppearance(panel?.effectiveAppearance)
+        return dark ? max(config.widget.activeOpacity, 0.94) : config.widget.activeOpacity
     }
 
     private func detailText() -> String {
