@@ -524,11 +524,14 @@ final class OrbView: NSView {
     let statusDot = NSView()
     var onHoverChanged: ((Bool) -> Void)?
     var onDragChanged: ((Bool) -> Void)?
-    var onDragEnded: (() -> Void)?
+    var onDragEnded: ((Bool) -> Void)?
     var onRefreshRequested: (() -> Void)?
     var contextualMenuProvider: (() -> NSMenu?)?
 
     private var trackingAreaRef: NSTrackingArea?
+    private var dragStartMouse: NSPoint?
+    private var dragStartFrame: NSRect?
+    private var dragDidMove = false
     private var currentPercent: Int?
     private var showingOfflinePlaceholder = false
     private var backgroundTone: BackgroundTone = .light
@@ -717,14 +720,37 @@ final class OrbView: NSView {
             onRefreshRequested?()
             return
         }
-        guard let window else { return }
-        onDragChanged?(true)
-        window.performDrag(with: event)
-        onDragChanged?(false)
+        dragStartMouse = NSEvent.mouseLocation
+        dragStartFrame = window?.frame
+        dragDidMove = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let window, let dragStartMouse, let dragStartFrame else { return }
+        let current = NSEvent.mouseLocation
+        let dx = current.x - dragStartMouse.x
+        let dy = current.y - dragStartMouse.y
+        if !dragDidMove {
+            let distance = hypot(dx, dy)
+            guard distance >= 3 else { return }
+            dragDidMove = true
+            onDragChanged?(true)
+        }
+        window.setFrameOrigin(NSPoint(x: dragStartFrame.minX + dx, y: dragStartFrame.minY + dy))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let didMove = dragDidMove
+        dragStartMouse = nil
+        dragStartFrame = nil
+        dragDidMove = false
+        if didMove {
+            onDragChanged?(false)
+        }
         if bounds.contains(convert(event.locationInWindow, from: nil)) {
             onHoverChanged?(true)
         }
-        onDragEnded?()
+        onDragEnded?(didMove)
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -814,8 +840,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         orb.onDragChanged = { [weak self] dragging in
             self?.handleDragChanged(dragging)
         }
-        orb.onDragEnded = { [weak self] in
-            self?.handleDragEnded()
+        orb.onDragEnded = { [weak self] didMove in
+            self?.handleDragEnded(didMove: didMove)
         }
         orb.onRefreshRequested = { [weak self] in
             self?.refreshQuota()
@@ -1004,9 +1030,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func handleDragEnded() {
-        snapPanelIfNeeded()
-        persistState()
+    private func handleDragEnded(didMove: Bool) {
+        if didMove {
+            snapPanelIfCloseToEdge()
+            persistState()
+        }
     }
 
     private func setActive(_ active: Bool, autoFade: Bool = false, animated: Bool = true) {
@@ -1151,18 +1179,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return NSRect(x: x, y: y, width: frame.width, height: frame.height)
     }
 
-    private func snapPanelIfNeeded() {
-        guard config.widget.edgeSnap, let panel else { return }
+    private func snapPanelIfCloseToEdge() {
+        guard let panel else { return }
         let frame = panel.frame
         let screen = NSScreen.screens.first { $0.visibleFrame.intersects(frame) } ?? NSScreen.main
         guard let screenFrame = screen?.visibleFrame else { return }
 
         let margin = config.widget.snapMargin
-        let leftX = screenFrame.minX + margin
-        let rightX = screenFrame.maxX - frame.width - margin
-        let snappedX = abs(frame.minX - leftX) <= abs(frame.minX - rightX) ? leftX : rightX
-        let snappedY = clampDouble(frame.minY, min: screenFrame.minY + margin, max: screenFrame.maxY - frame.height - margin)
-        panel.setFrameOrigin(NSPoint(x: snappedX, y: snappedY))
+        let clampedFrame = clampedFrame(frame, in: screenFrame)
+        var targetX = clampedFrame.minX
+        let targetY = clampDouble(
+            clampedFrame.minY,
+            min: screenFrame.minY + margin,
+            max: screenFrame.maxY - clampedFrame.height - margin
+        )
+
+        if config.widget.edgeSnap {
+            let snapDistance = min(max(config.widget.size * 0.75, 56), 88)
+            let distanceToLeft = clampedFrame.minX - screenFrame.minX
+            let distanceToRight = screenFrame.maxX - clampedFrame.maxX
+            let leftX = screenFrame.minX + margin
+            let rightX = screenFrame.maxX - clampedFrame.width - margin
+
+            if distanceToLeft <= snapDistance || distanceToRight <= snapDistance {
+                targetX = distanceToLeft <= distanceToRight ? leftX : rightX
+            }
+        }
+
+        panel.setFrameOrigin(NSPoint(x: targetX, y: targetY))
     }
 
     private func persistState() {
