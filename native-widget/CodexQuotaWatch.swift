@@ -411,7 +411,7 @@ final class RingView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         let lightContent = backgroundTone.usesLightContent
-        let inset: CGFloat = 7
+        let inset: CGFloat = 6.5
         let diameter = min(bounds.width, bounds.height) - inset * 2
         let rect = NSRect(
             x: bounds.midX - diameter / 2,
@@ -421,30 +421,31 @@ final class RingView: NSView {
         )
         let center = NSPoint(x: rect.midX, y: rect.midY)
         let radius = diameter / 2
-        let lineWidth: CGFloat = 2.5
-
-        let track = NSBezierPath()
-        track.lineWidth = lineWidth
-        track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-        (lightContent ? NSColor.white : NSColor.black).withAlphaComponent(lightContent ? 0.28 : 0.18).setStroke()
-        track.stroke()
+        let lineWidth: CGFloat = 2.0
+        let clampedProgress = max(0, min(progress, 1))
+        guard clampedProgress > 0.004 else { return }
 
         let ring = NSBezierPath()
         ring.lineWidth = lineWidth
         ring.lineCapStyle = .round
-        ring.appendArc(
-            withCenter: center,
-            radius: radius,
-            startAngle: 90,
-            endAngle: 90 - 360 * progress,
-            clockwise: true
-        )
+        if clampedProgress >= 0.985 {
+            ring.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
+        } else {
+            let startAngle: CGFloat = 230
+            ring.appendArc(
+                withCenter: center,
+                radius: radius,
+                startAngle: startAngle,
+                endAngle: startAngle - 360 * clampedProgress,
+                clockwise: true
+            )
+        }
         let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? NSColor.controlAccentColor
         let contrastColor = lightContent ? NSColor.white : NSColor.black
-        let softAccent = accent.blended(withFraction: lightContent ? 0.14 : 0.26, of: contrastColor) ?? accent
+        let softAccent = accent.blended(withFraction: lightContent ? 0.52 : 0.48, of: contrastColor) ?? accent
         let color = offline
-            ? NSColor.systemOrange.withAlphaComponent(lightContent ? 0.82 : 0.72)
-            : softAccent.withAlphaComponent(lightContent ? 0.92 : 0.86)
+            ? NSColor.systemOrange.withAlphaComponent(lightContent ? 0.62 : 0.56)
+            : softAccent.withAlphaComponent(lightContent ? 0.50 : 0.46)
         color.setStroke()
         ring.stroke()
     }
@@ -576,10 +577,10 @@ final class OrbView: NSView {
     private func setup() {
         wantsLayer = true
         layer?.masksToBounds = false
-        layer?.shadowColor = NSColor.black.withAlphaComponent(0.14).cgColor
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.10).cgColor
         layer?.shadowOpacity = 1
-        layer?.shadowRadius = 12
-        layer?.shadowOffset = NSSize(width: 0, height: -3)
+        layer?.shadowRadius = 15
+        layer?.shadowOffset = NSSize(width: 0, height: -4)
 
         materialView.material = .popover
         materialView.blendingMode = .behindWindow
@@ -587,7 +588,7 @@ final class OrbView: NSView {
         materialView.wantsLayer = true
         materialView.layer?.cornerCurve = .continuous
         materialView.layer?.masksToBounds = true
-        materialView.layer?.borderWidth = 0.8
+        materialView.layer?.borderWidth = 0
         materialView.autoresizingMask = [.width, .height]
         addSubview(materialView)
 
@@ -614,7 +615,6 @@ final class OrbView: NSView {
         super.layout()
         let visualFrame = bounds.insetBy(dx: orbWindowPadding, dy: orbWindowPadding)
         materialView.frame = visualFrame
-        materialView.layer?.cornerRadius = min(bounds.width, bounds.height) / 2
         materialView.layer?.cornerRadius = min(visualFrame.width, visualFrame.height) / 2
         ringView.frame = visualFrame
         percentLabel.frame = NSRect(x: visualFrame.minX, y: visualFrame.midY - 15, width: visualFrame.width, height: 32)
@@ -667,7 +667,7 @@ final class OrbView: NSView {
             string: "\(value)",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 25, weight: .medium),
-                .foregroundColor: baseColor.withAlphaComponent(lightContent ? 0.96 : 0.68),
+                .foregroundColor: baseColor.withAlphaComponent(lightContent ? 0.95 : 0.78),
                 .paragraphStyle: paragraph,
             ]
         )
@@ -675,7 +675,7 @@ final class OrbView: NSView {
             string: "%",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 16, weight: .medium),
-                .foregroundColor: baseColor.withAlphaComponent(lightContent ? 0.78 : 0.5),
+                .foregroundColor: baseColor.withAlphaComponent(lightContent ? 0.76 : 0.56),
                 .baselineOffset: 2,
                 .paragraphStyle: paragraph,
             ]
@@ -691,7 +691,7 @@ final class OrbView: NSView {
             string: "--%",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 24, weight: .medium),
-                .foregroundColor: (lightContent ? NSColor.white : NSColor.black).withAlphaComponent(lightContent ? 0.9 : 0.54),
+                .foregroundColor: (lightContent ? NSColor.white : NSColor.black).withAlphaComponent(lightContent ? 0.9 : 0.7),
                 .paragraphStyle: paragraph,
             ]
         )
@@ -701,9 +701,7 @@ final class OrbView: NSView {
         let lightContent = backgroundTone.usesLightContent
         materialView.appearance = NSAppearance(named: lightContent ? .darkAqua : .aqua)
         materialView.material = lightContent ? .hudWindow : .popover
-        materialView.layer?.borderColor = (lightContent ? NSColor.white : NSColor.black)
-            .withAlphaComponent(lightContent ? 0.28 : 0.14)
-            .cgColor
+        materialView.layer?.borderWidth = 0
         statusDot.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(lightContent ? 0.86 : 0.72).cgColor
     }
 
@@ -1047,7 +1045,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func adjustedIdleOpacity() -> CGFloat {
         return backgroundTone.usesLightContent
             ? max(config.widget.idleOpacity, 0.66)
-            : max(config.widget.idleOpacity, 0.58)
+            : max(config.widget.idleOpacity, 0.62)
     }
 
     private func adjustedActiveOpacity() -> CGFloat {
