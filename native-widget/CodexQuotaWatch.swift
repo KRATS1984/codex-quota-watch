@@ -421,31 +421,27 @@ final class RingView: NSView {
         )
         let center = NSPoint(x: rect.midX, y: rect.midY)
         let radius = diameter / 2
-        let lineWidth: CGFloat = 2.0
+        let lineWidth: CGFloat = 1.6
         let clampedProgress = max(0, min(progress, 1))
-        guard clampedProgress > 0.004 else { return }
 
         let ring = NSBezierPath()
         ring.lineWidth = lineWidth
-        ring.lineCapStyle = .round
-        if clampedProgress >= 0.985 {
-            ring.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-        } else {
-            let startAngle: CGFloat = 230
-            ring.appendArc(
-                withCenter: center,
-                radius: radius,
-                startAngle: startAngle,
-                endAngle: startAngle - 360 * clampedProgress,
-                clockwise: true
-            )
-        }
+        ring.lineCapStyle = .butt
+        ring.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
         let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? NSColor.controlAccentColor
         let contrastColor = lightContent ? NSColor.white : NSColor.black
         let softAccent = accent.blended(withFraction: lightContent ? 0.52 : 0.48, of: contrastColor) ?? accent
-        let color = offline
-            ? NSColor.systemOrange.withAlphaComponent(lightContent ? 0.62 : 0.56)
-            : softAccent.withAlphaComponent(lightContent ? 0.50 : 0.46)
+        let color: NSColor
+        if offline {
+            color = NSColor.systemOrange.withAlphaComponent(lightContent ? 0.54 : 0.48)
+        } else if clampedProgress <= 0.10 {
+            color = NSColor.systemRed.withAlphaComponent(lightContent ? 0.50 : 0.46)
+        } else if clampedProgress <= 0.20 {
+            color = NSColor.systemOrange.withAlphaComponent(lightContent ? 0.46 : 0.42)
+        } else {
+            let healthAlpha = 0.20 + clampedProgress * 0.12
+            color = softAccent.withAlphaComponent(lightContent ? healthAlpha + 0.02 : healthAlpha)
+        }
         color.setStroke()
         ring.stroke()
     }
