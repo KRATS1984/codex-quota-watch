@@ -1,6 +1,4 @@
 import Cocoa
-import ScreenCaptureKit
-
 let appVersion = "0.3.0"
 let defaultConfigPath = "~/.codex-quota-watch/config.json"
 let defaultWidgetStatePath = "~/.codex-quota-watch/widget-state.json"
@@ -179,16 +177,6 @@ func logError(_ message: String) {
     if let data = "\(message)\n".data(using: .utf8) {
         FileHandle.standardError.write(data)
     }
-}
-
-func isDarkAppearance(_ appearance: NSAppearance?) -> Bool {
-    let resolved = (appearance ?? NSApp.effectiveAppearance).bestMatch(from: [
-        .aqua,
-        .darkAqua,
-        .vibrantLight,
-        .vibrantDark,
-    ])
-    return resolved == .darkAqua || resolved == .vibrantDark
 }
 
 enum BackgroundTone {
@@ -541,8 +529,6 @@ final class OrbView: NSView {
     var contextualMenuProvider: (() -> NSMenu?)?
 
     private var trackingAreaRef: NSTrackingArea?
-    private var dragStartMouse: NSPoint?
-    private var dragStartFrame: NSRect?
     private var currentPercent: Int?
     private var showingOfflinePlaceholder = false
     private var backgroundTone: BackgroundTone = .light
@@ -624,7 +610,7 @@ final class OrbView: NSView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -726,31 +712,14 @@ final class OrbView: NSView {
         onHoverChanged?(false)
     }
 
-    override func mouseMoved(with event: NSEvent) {
-        onHoverChanged?(true)
-    }
-
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
             onRefreshRequested?()
             return
         }
-        dragStartMouse = NSEvent.mouseLocation
-        dragStartFrame = window?.frame
+        guard let window else { return }
         onDragChanged?(true)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let window, let dragStartMouse, let dragStartFrame else { return }
-        let current = NSEvent.mouseLocation
-        let dx = current.x - dragStartMouse.x
-        let dy = current.y - dragStartMouse.y
-        window.setFrameOrigin(NSPoint(x: dragStartFrame.minX + dx, y: dragStartFrame.minY + dy))
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        dragStartMouse = nil
-        dragStartFrame = nil
+        window.performDrag(with: event)
         onDragChanged?(false)
         if bounds.contains(convert(event.locationInWindow, from: nil)) {
             onHoverChanged?(true)
@@ -776,11 +745,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var refreshTimer: Timer?
     private var idleTimer: Timer?
-    private var backgroundSampleTimer: Timer?
+    private var hoverDetailTimer: Timer?
     private var lastQuota: WeeklyQuota?
     private var offline = false
     private var backgroundTone: BackgroundTone = .light
-    private var isSamplingBackground = false
+    private var isHovering = false
+    private var isDragging = false
+    private var isActive = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -789,13 +760,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state = loadState(path: config.widget.statePath)
         client = CodexQuotaClient(config: config)
 
-        DistributedNotificationCenter.default().addObserver(
-            self,
-            selector: #selector(systemAppearanceChanged),
-            name: Notification.Name("AppleInterfaceThemeChangedNotification"),
-            object: nil
-        )
-
         createStatusItem()
         createPanel()
         updateStatusMenu()
@@ -803,7 +767,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if config.widget.showOnLaunch && !state.hidden {
             showOrb()
         }
-        startBackgroundSampling()
 
         refreshQuota()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: config.widget.pollIntervalSeconds, repeats: true) { [weak self] _ in
@@ -812,7 +775,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        backgroundSampleTimer?.invalidate()
+        hoverDetailTimer?.invalidate()
+        idleTimer?.invalidate()
         persistState()
     }
 
@@ -845,22 +809,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let orb = OrbView(frame: NSRect(x: 0, y: 0, width: size, height: size))
         orb.onHoverChanged = { [weak self] hovering in
-            self?.setActive(hovering)
-            if hovering {
-                self?.showDetailBubble()
-            } else {
-                self?.hideDetailBubble()
-            }
+            self?.handleHoverChanged(hovering)
         }
         orb.onDragChanged = { [weak self] dragging in
-            self?.setActive(dragging)
-            if dragging {
-                self?.hideDetailBubble()
-            }
+            self?.handleDragChanged(dragging)
         }
         orb.onDragEnded = { [weak self] in
-            self?.snapPanelIfNeeded()
-            self?.persistState()
+            self?.handleDragEnded()
         }
         orb.onRefreshRequested = { [weak self] in
             self?.refreshQuota()
@@ -897,13 +852,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         detailPanel = panel
         detailView = view
         view.setBackgroundTone(backgroundTone)
-    }
-
-    @objc private func systemAppearanceChanged() {
-        refreshBackgroundTone()
-        if panel?.isVisible == true {
-            panel?.alphaValue = adjustedIdleOpacity()
-        }
     }
 
     private func createStatusItem() {
@@ -1009,7 +957,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.level = config.widget.alwaysOnTop ? .floating : .normal
         state.hidden = false
         persistState()
-        refreshBackgroundTone()
         setActive(true, autoFade: true)
         updateStatusMenu()
     }
@@ -1027,11 +974,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    private func setActive(_ active: Bool, autoFade: Bool = false) {
+    private func handleHoverChanged(_ hovering: Bool) {
+        guard hovering != isHovering else { return }
+        isHovering = hovering
+        hoverDetailTimer?.invalidate()
+
+        guard !isDragging else { return }
+        setActive(hovering)
+        if hovering {
+            scheduleDetailBubble()
+        } else {
+            hideDetailBubble()
+        }
+    }
+
+    private func handleDragChanged(_ dragging: Bool) {
+        guard dragging != isDragging else { return }
+        isDragging = dragging
+        hoverDetailTimer?.invalidate()
+
+        if dragging {
+            hideDetailBubble()
+            setActive(true, animated: false)
+        } else {
+            setActive(isHovering)
+            if isHovering {
+                scheduleDetailBubble()
+            }
+        }
+    }
+
+    private func handleDragEnded() {
+        snapPanelIfNeeded()
+        persistState()
+    }
+
+    private func setActive(_ active: Bool, autoFade: Bool = false, animated: Bool = true) {
         idleTimer?.invalidate()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.16
-            panel?.animator().alphaValue = active ? adjustedActiveOpacity() : adjustedIdleOpacity()
+        let targetAlpha = active ? adjustedActiveOpacity() : adjustedIdleOpacity()
+        if active != isActive || abs((panel?.alphaValue ?? targetAlpha) - targetAlpha) > 0.01 {
+            isActive = active
+            if animated {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.16
+                    panel?.animator().alphaValue = targetAlpha
+                }
+            } else {
+                panel?.alphaValue = targetAlpha
+            }
         }
         if active && autoFade {
             scheduleIdleFade()
@@ -1050,39 +1040,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             : max(config.widget.activeOpacity, 0.9)
     }
 
-    private func startBackgroundSampling() {
-        backgroundSampleTimer?.invalidate()
-        refreshBackgroundTone()
-        backgroundSampleTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            self?.refreshBackgroundTone()
-        }
-    }
-
-    private func refreshBackgroundTone() {
-        guard !isSamplingBackground else {
-            return
-        }
-
-        guard let sampleRect = sampleRectNearOrb(), #available(macOS 15.2, *) else {
-            setBackgroundTone(.light)
-            return
-        }
-
-        isSamplingBackground = true
-        SCScreenshotManager.captureImage(in: sampleRect) { [weak self] image, _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.isSamplingBackground = false
-                guard let image,
-                      let luminance = self.averageLuminance(of: image) else {
-                    self.setBackgroundTone(.light)
-                    return
-                }
-                self.setBackgroundTone(luminance < 0.52 ? .dark : .light)
-            }
-        }
-    }
-
     private func setBackgroundTone(_ tone: BackgroundTone) {
         guard tone != backgroundTone else { return }
         backgroundTone = tone
@@ -1095,64 +1052,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyBackgroundTone(_ tone: BackgroundTone) {
         orbView?.setBackgroundTone(tone)
         detailView?.setBackgroundTone(tone)
-    }
-
-    private func sampleRectNearOrb() -> CGRect? {
-        guard let panel,
-              panel.isVisible,
-              let screen = NSScreen.screens.first(where: { $0.frame.intersects(panel.frame) }),
-              let displayNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
-            return nil
-        }
-
-        let displayID = CGDirectDisplayID(displayNumber.uint32Value)
-        let displayBounds = CGDisplayBounds(displayID)
-        let screenFrame = screen.frame
-        let sampleSize: CGFloat = 48
-        let gap: CGFloat = 8
-        let showLeft = panel.frame.midX > screenFrame.midX
-        let leftX = panel.frame.minX - gap - sampleSize
-        let rightX = panel.frame.maxX + gap
-        let preferredX = showLeft ? leftX : rightX
-        let fallbackX = showLeft ? rightX : leftX
-        let fitsPreferred = preferredX >= screenFrame.minX && preferredX + sampleSize <= screenFrame.maxX
-        let chosenX = fitsPreferred ? preferredX : fallbackX
-        let sampleFrame = NSRect(
-            x: clampDouble(chosenX, min: screenFrame.minX, max: screenFrame.maxX - sampleSize),
-            y: clampDouble(panel.frame.midY - sampleSize / 2, min: screenFrame.minY, max: screenFrame.maxY - sampleSize),
-            width: sampleSize,
-            height: sampleSize
-        )
-        let xInScreen = sampleFrame.minX - screenFrame.minX
-        let yFromTop = screenFrame.maxY - sampleFrame.maxY
-        return CGRect(
-            x: displayBounds.minX + xInScreen,
-            y: displayBounds.minY + yFromTop,
-            width: sampleFrame.width,
-            height: sampleFrame.height
-        )
-    }
-
-    private func averageLuminance(of image: CGImage) -> CGFloat? {
-        var pixel = [UInt8](repeating: 0, count: 4)
-        guard let context = CGContext(
-            data: &pixel,
-            width: 1,
-            height: 1,
-            bitsPerComponent: 8,
-            bytesPerRow: 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return nil
-        }
-        context.interpolationQuality = .medium
-        context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-
-        let red = CGFloat(pixel[0]) / 255
-        let green = CGFloat(pixel[1]) / 255
-        let blue = CGFloat(pixel[2]) / 255
-        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
     }
 
     private func detailText() -> String {
@@ -1169,8 +1068,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         detailView?.render(text: detailText())
     }
 
+    private func scheduleDetailBubble() {
+        hoverDetailTimer?.invalidate()
+        hoverDetailTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+            guard let self, self.isHovering, !self.isDragging else { return }
+            self.showDetailBubble()
+        }
+    }
+
     private func showDetailBubble() {
-        guard panel?.isVisible == true else { return }
+        guard panel?.isVisible == true, isHovering, !isDragging else { return }
         if detailPanel == nil {
             createDetailPanel()
         }
@@ -1184,6 +1091,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hideDetailBubble() {
+        hoverDetailTimer?.invalidate()
         guard let detailPanel, detailPanel.isVisible else { return }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
@@ -1219,7 +1127,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleIdleFade() {
         idleTimer?.invalidate()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 2.4, repeats: false) { [weak self] _ in
-            self?.setActive(false)
+            guard let self, !self.isHovering, !self.isDragging else { return }
+            self.setActive(false)
         }
     }
 
