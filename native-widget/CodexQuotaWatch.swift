@@ -1,4 +1,5 @@
 import Cocoa
+import ScreenCaptureKit
 
 let appVersion = "0.3.0"
 let defaultConfigPath = "~/.codex-quota-watch/config.json"
@@ -188,6 +189,15 @@ func isDarkAppearance(_ appearance: NSAppearance?) -> Bool {
         .vibrantDark,
     ])
     return resolved == .darkAqua || resolved == .vibrantDark
+}
+
+enum BackgroundTone {
+    case light
+    case dark
+
+    var usesLightContent: Bool {
+        self == .dark
+    }
 }
 
 final class CodexQuotaClient {
@@ -392,12 +402,15 @@ final class RingView: NSView {
     var offline = false {
         didSet { needsDisplay = true }
     }
+    var backgroundTone: BackgroundTone = .light {
+        didSet { needsDisplay = true }
+    }
 
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        let dark = isDarkAppearance(effectiveAppearance)
+        let lightContent = backgroundTone.usesLightContent
         let inset: CGFloat = 7
         let diameter = min(bounds.width, bounds.height) - inset * 2
         let rect = NSRect(
@@ -413,7 +426,7 @@ final class RingView: NSView {
         let track = NSBezierPath()
         track.lineWidth = lineWidth
         track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-        NSColor.separatorColor.withAlphaComponent(dark ? 0.28 : 0.12).setStroke()
+        (lightContent ? NSColor.white : NSColor.black).withAlphaComponent(lightContent ? 0.28 : 0.18).setStroke()
         track.stroke()
 
         let ring = NSBezierPath()
@@ -427,10 +440,11 @@ final class RingView: NSView {
             clockwise: true
         )
         let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? NSColor.controlAccentColor
-        let softAccent = accent.blended(withFraction: dark ? 0.18 : 0.34, of: NSColor.secondaryLabelColor) ?? accent
+        let contrastColor = lightContent ? NSColor.white : NSColor.black
+        let softAccent = accent.blended(withFraction: lightContent ? 0.14 : 0.26, of: contrastColor) ?? accent
         let color = offline
-            ? NSColor.systemOrange.withAlphaComponent(dark ? 0.82 : 0.58)
-            : softAccent.withAlphaComponent(dark ? 0.92 : 0.66)
+            ? NSColor.systemOrange.withAlphaComponent(lightContent ? 0.82 : 0.72)
+            : softAccent.withAlphaComponent(lightContent ? 0.92 : 0.86)
         color.setStroke()
         ring.stroke()
     }
@@ -439,6 +453,7 @@ final class RingView: NSView {
 final class DetailBubbleView: NSView {
     private let materialView = NSVisualEffectView()
     private let label = NSTextField(labelWithString: "")
+    private var backgroundTone: BackgroundTone = .light
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -501,11 +516,19 @@ final class DetailBubbleView: NSView {
         needsDisplay = true
     }
 
+    func setBackgroundTone(_ tone: BackgroundTone) {
+        backgroundTone = tone
+        refreshAppearance()
+    }
+
     private func updateResolvedColors() {
-        let dark = isDarkAppearance(effectiveAppearance)
-        materialView.material = dark ? .hudWindow : .popover
-        materialView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(dark ? 0.28 : 0.16).cgColor
-        label.textColor = dark ? NSColor.labelColor.withAlphaComponent(0.88) : .secondaryLabelColor
+        let lightContent = backgroundTone.usesLightContent
+        materialView.appearance = NSAppearance(named: lightContent ? .darkAqua : .aqua)
+        materialView.material = lightContent ? .hudWindow : .popover
+        materialView.layer?.borderColor = (lightContent ? NSColor.white : NSColor.black)
+            .withAlphaComponent(lightContent ? 0.26 : 0.14)
+            .cgColor
+        label.textColor = (lightContent ? NSColor.white : NSColor.black).withAlphaComponent(lightContent ? 0.88 : 0.62)
     }
 }
 
@@ -525,6 +548,7 @@ final class OrbView: NSView {
     private var dragStartFrame: NSRect?
     private var currentPercent: Int?
     private var showingOfflinePlaceholder = false
+    private var backgroundTone: BackgroundTone = .light
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -635,14 +659,15 @@ final class OrbView: NSView {
     }
 
     private func setPercentValue(_ value: Int) {
-        let dark = isDarkAppearance(effectiveAppearance)
+        let lightContent = backgroundTone.usesLightContent
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
+        let baseColor = lightContent ? NSColor.white : NSColor.black
         let text = NSMutableAttributedString(
             string: "\(value)",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 25, weight: .medium),
-                .foregroundColor: NSColor.labelColor.withAlphaComponent(dark ? 0.96 : 0.86),
+                .foregroundColor: baseColor.withAlphaComponent(lightContent ? 0.96 : 0.68),
                 .paragraphStyle: paragraph,
             ]
         )
@@ -650,7 +675,7 @@ final class OrbView: NSView {
             string: "%",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 16, weight: .medium),
-                .foregroundColor: (dark ? NSColor.labelColor : NSColor.secondaryLabelColor).withAlphaComponent(dark ? 0.82 : 0.78),
+                .foregroundColor: baseColor.withAlphaComponent(lightContent ? 0.78 : 0.5),
                 .baselineOffset: 2,
                 .paragraphStyle: paragraph,
             ]
@@ -659,24 +684,27 @@ final class OrbView: NSView {
     }
 
     private func setOfflinePercent() {
-        let dark = isDarkAppearance(effectiveAppearance)
+        let lightContent = backgroundTone.usesLightContent
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         percentLabel.attributedStringValue = NSAttributedString(
             string: "--%",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 24, weight: .medium),
-                .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(dark ? 0.9 : 0.78),
+                .foregroundColor: (lightContent ? NSColor.white : NSColor.black).withAlphaComponent(lightContent ? 0.9 : 0.54),
                 .paragraphStyle: paragraph,
             ]
         )
     }
 
     private func updateResolvedColors() {
-        let dark = isDarkAppearance(effectiveAppearance)
-        materialView.material = dark ? .hudWindow : .popover
-        materialView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(dark ? 0.3 : 0.16).cgColor
-        statusDot.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(dark ? 0.86 : 0.72).cgColor
+        let lightContent = backgroundTone.usesLightContent
+        materialView.appearance = NSAppearance(named: lightContent ? .darkAqua : .aqua)
+        materialView.material = lightContent ? .hudWindow : .popover
+        materialView.layer?.borderColor = (lightContent ? NSColor.white : NSColor.black)
+            .withAlphaComponent(lightContent ? 0.28 : 0.14)
+            .cgColor
+        statusDot.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(lightContent ? 0.86 : 0.72).cgColor
     }
 
     func refreshAppearance() {
@@ -688,6 +716,12 @@ final class OrbView: NSView {
             setOfflinePercent()
         }
         needsDisplay = true
+    }
+
+    func setBackgroundTone(_ tone: BackgroundTone) {
+        backgroundTone = tone
+        ringView.backgroundTone = tone
+        refreshAppearance()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -748,8 +782,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var refreshTimer: Timer?
     private var idleTimer: Timer?
+    private var backgroundSampleTimer: Timer?
     private var lastQuota: WeeklyQuota?
     private var offline = false
+    private var backgroundTone: BackgroundTone = .light
+    private var isSamplingBackground = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -772,6 +809,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if config.widget.showOnLaunch && !state.hidden {
             showOrb()
         }
+        startBackgroundSampling()
 
         refreshQuota()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: config.widget.pollIntervalSeconds, repeats: true) { [weak self] _ in
@@ -780,6 +818,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        backgroundSampleTimer?.invalidate()
         persistState()
     }
 
@@ -839,6 +878,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView = orb
         self.panel = panel
         self.orbView = orb
+        applyBackgroundTone(backgroundTone)
     }
 
     private func createDetailPanel() {
@@ -862,11 +902,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView = view
         detailPanel = panel
         detailView = view
+        view.setBackgroundTone(backgroundTone)
     }
 
     @objc private func systemAppearanceChanged() {
-        orbView?.refreshAppearance()
-        detailView?.refreshAppearance()
+        refreshBackgroundTone()
         if panel?.isVisible == true {
             panel?.alphaValue = adjustedIdleOpacity()
         }
@@ -975,6 +1015,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.level = config.widget.alwaysOnTop ? .floating : .normal
         state.hidden = false
         persistState()
+        refreshBackgroundTone()
         setActive(true, autoFade: true)
         updateStatusMenu()
     }
@@ -1004,13 +1045,120 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func adjustedIdleOpacity() -> CGFloat {
-        let dark = isDarkAppearance(panel?.effectiveAppearance)
-        return dark ? max(config.widget.idleOpacity, 0.66) : config.widget.idleOpacity
+        return backgroundTone.usesLightContent
+            ? max(config.widget.idleOpacity, 0.66)
+            : max(config.widget.idleOpacity, 0.58)
     }
 
     private func adjustedActiveOpacity() -> CGFloat {
-        let dark = isDarkAppearance(panel?.effectiveAppearance)
-        return dark ? max(config.widget.activeOpacity, 0.94) : config.widget.activeOpacity
+        return backgroundTone.usesLightContent
+            ? max(config.widget.activeOpacity, 0.94)
+            : max(config.widget.activeOpacity, 0.9)
+    }
+
+    private func startBackgroundSampling() {
+        backgroundSampleTimer?.invalidate()
+        refreshBackgroundTone()
+        backgroundSampleTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.refreshBackgroundTone()
+        }
+    }
+
+    private func refreshBackgroundTone() {
+        guard !isSamplingBackground else {
+            return
+        }
+
+        guard let sampleRect = sampleRectNearOrb(), #available(macOS 15.2, *) else {
+            setBackgroundTone(.light)
+            return
+        }
+
+        isSamplingBackground = true
+        SCScreenshotManager.captureImage(in: sampleRect) { [weak self] image, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isSamplingBackground = false
+                guard let image,
+                      let luminance = self.averageLuminance(of: image) else {
+                    self.setBackgroundTone(.light)
+                    return
+                }
+                self.setBackgroundTone(luminance < 0.52 ? .dark : .light)
+            }
+        }
+    }
+
+    private func setBackgroundTone(_ tone: BackgroundTone) {
+        guard tone != backgroundTone else { return }
+        backgroundTone = tone
+        applyBackgroundTone(tone)
+        if panel?.isVisible == true {
+            panel?.alphaValue = adjustedIdleOpacity()
+        }
+    }
+
+    private func applyBackgroundTone(_ tone: BackgroundTone) {
+        orbView?.setBackgroundTone(tone)
+        detailView?.setBackgroundTone(tone)
+    }
+
+    private func sampleRectNearOrb() -> CGRect? {
+        guard let panel,
+              panel.isVisible,
+              let screen = NSScreen.screens.first(where: { $0.frame.intersects(panel.frame) }),
+              let displayNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+            return nil
+        }
+
+        let displayID = CGDirectDisplayID(displayNumber.uint32Value)
+        let displayBounds = CGDisplayBounds(displayID)
+        let screenFrame = screen.frame
+        let sampleSize: CGFloat = 48
+        let gap: CGFloat = 8
+        let showLeft = panel.frame.midX > screenFrame.midX
+        let leftX = panel.frame.minX - gap - sampleSize
+        let rightX = panel.frame.maxX + gap
+        let preferredX = showLeft ? leftX : rightX
+        let fallbackX = showLeft ? rightX : leftX
+        let fitsPreferred = preferredX >= screenFrame.minX && preferredX + sampleSize <= screenFrame.maxX
+        let chosenX = fitsPreferred ? preferredX : fallbackX
+        let sampleFrame = NSRect(
+            x: clampDouble(chosenX, min: screenFrame.minX, max: screenFrame.maxX - sampleSize),
+            y: clampDouble(panel.frame.midY - sampleSize / 2, min: screenFrame.minY, max: screenFrame.maxY - sampleSize),
+            width: sampleSize,
+            height: sampleSize
+        )
+        let xInScreen = sampleFrame.minX - screenFrame.minX
+        let yFromTop = screenFrame.maxY - sampleFrame.maxY
+        return CGRect(
+            x: displayBounds.minX + xInScreen,
+            y: displayBounds.minY + yFromTop,
+            width: sampleFrame.width,
+            height: sampleFrame.height
+        )
+    }
+
+    private func averageLuminance(of image: CGImage) -> CGFloat? {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let context = CGContext(
+            data: &pixel,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+
+        let red = CGFloat(pixel[0]) / 255
+        let green = CGFloat(pixel[1]) / 255
+        let blue = CGFloat(pixel[2]) / 255
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
     }
 
     private func detailText() -> String {
