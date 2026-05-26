@@ -421,7 +421,7 @@ final class RingView: NSView {
         let softAccent = accent.blended(withFraction: lightContent ? 0.52 : 0.48, of: contrastColor) ?? accent
         let color: NSColor
         if offline {
-            color = NSColor.systemOrange.withAlphaComponent(lightContent ? 0.54 : 0.48)
+            color = NSColor.systemOrange.withAlphaComponent(lightContent ? 0.42 : 0.36)
         } else if clampedProgress <= 0.10 {
             color = NSColor.systemRed.withAlphaComponent(lightContent ? 0.50 : 0.46)
         } else if clampedProgress <= 0.20 {
@@ -590,7 +590,7 @@ final class OrbView: NSView {
         addSubview(percentLabel)
 
         statusDot.wantsLayer = true
-        statusDot.layer?.cornerRadius = 3
+        statusDot.layer?.cornerRadius = 2
         statusDot.isHidden = true
         addSubview(statusDot)
         updateResolvedColors()
@@ -603,7 +603,7 @@ final class OrbView: NSView {
         materialView.layer?.cornerRadius = min(visualFrame.width, visualFrame.height) / 2
         ringView.frame = visualFrame
         percentLabel.frame = NSRect(x: visualFrame.minX, y: visualFrame.midY - 15, width: visualFrame.width, height: 32)
-        statusDot.frame = NSRect(x: visualFrame.maxX - 24, y: visualFrame.minY + 18, width: 6, height: 6)
+        statusDot.frame = NSRect(x: visualFrame.maxX - 22, y: visualFrame.minY + 18, width: 4, height: 4)
     }
 
     override func updateTrackingAreas() {
@@ -626,7 +626,7 @@ final class OrbView: NSView {
         showingOfflinePlaceholder = false
         setPercentValue(quota.remainingPercent)
         ringView.progress = CGFloat(quota.remainingPercent) / 100
-        ringView.offline = offline
+        ringView.offline = false
         statusDot.isHidden = !offline
         toolTip = offline
             ? "Offline. Last known: \(quota.remainingPercent)%, reset \(quota.resetsAtText)"
@@ -687,7 +687,7 @@ final class OrbView: NSView {
         materialView.appearance = NSAppearance(named: lightContent ? .darkAqua : .aqua)
         materialView.material = lightContent ? .hudWindow : .popover
         materialView.layer?.borderWidth = 0
-        statusDot.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(lightContent ? 0.86 : 0.72).cgColor
+        statusDot.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(lightContent ? 0.62 : 0.54).cgColor
     }
 
     func refreshAppearance() {
